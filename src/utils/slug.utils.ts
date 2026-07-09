@@ -1,11 +1,10 @@
 import slugify from 'slugify';
-import { User } from 'src/app/user/user.model';
-import { Repository } from 'typeorm';
+import { PrismaService } from '../infrastructure/prisma/prisma.service';
 
 export class SlugUtils {
   constructor() {}
 
-  async slug(text: string, Repository: Repository<User>) {
+  async slug(text: string, prisma: PrismaService) {
     let newSlug: object | null;
     const _slug = slugify(`${text}-${Math.random().toString().substr(2, 6)}-baby`, {
       replacement: '-',
@@ -15,7 +14,7 @@ export class SlugUtils {
     });
 
     do {
-      newSlug = await Repository.findOne({
+      newSlug = await prisma.user.findUnique({
         where: { slug: _slug },
       });
     } while (newSlug);
@@ -24,7 +23,7 @@ export class SlugUtils {
   }
 
 
-  async all(text: string, Repository: Repository<any>) {
+  async all(text: string, prisma: PrismaService, model: 'user' | 'profilNounu' | 'profilParent' = 'user') {
     let newSlug: object | null;
     const _slug = slugify(`${text}-${Math.random().toString().substr(2, 6)}`, {
       replacement: '-',
@@ -34,7 +33,7 @@ export class SlugUtils {
     });
 
     do {
-      newSlug = await Repository.findOne({
+      newSlug = await (prisma as any)[model].findUnique({
         where: { slug: _slug },
       });
     } while (newSlug);

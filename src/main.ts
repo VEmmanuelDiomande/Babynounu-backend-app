@@ -1,19 +1,47 @@
+import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { BadRequestException, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, BadRequestException } from '@nestjs/common';
 import { ValidationError } from 'class-validator';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { isProd } from './database/database.providers';
 import { json as jsonParser } from 'body-parser';
+import { IoAdapter } from '@nestjs/platform-socket.io';
+import { join } from 'path';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import * as fs from 'fs';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.enableCors();
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // Augmente la limite de la taille des requêtes
+  app.useWebSocketAdapter(new IoAdapter(app));
+
+  const uploadsDir = join(process.cwd(), 'uploads', 'chat');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  const jobsUploadsDir = join(process.cwd(), 'uploads', 'jobs');
+  if (!fs.existsSync(jobsUploadsDir)) {
+    fs.mkdirSync(jobsUploadsDir, { recursive: true });
+  }
+  app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
+
+  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:8100,http://localhost:8084,http://localhost:8085')
+    .split(',')
+    .map((origin) => origin.trim());
+
+  app.enableCors({
+    origin: corsOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
+
+  app.use(jsonParser({ limit: '10mb' }));
 
   app.useGlobalPipes(
     new ValidationPipe({
+      whitelist: true,
+      transform: true,
+      forbidNonWhitelisted: true,
       exceptionFactory: (validationErrors: ValidationError[] = []) => {
         return new BadRequestException(
           validationErrors.map((error) => ({
@@ -25,26 +53,21 @@ async function bootstrap() {
     }),
   );
 
-  const options = new DocumentBuilder()
-    .setTitle('Your Api Bady Nounu')
+  const config = new DocumentBuilder()
+    .setTitle('BabyNounu API')
+    .setDescription('API pour la plateforme BabyNounu — mise en relation parents/familles et prestataires (garde d\'enfants, ménage, cuisine)')
+    .setVersion('2.0.0')
     .addBearerAuth()
-    .setDescription('Your API description')
-    .setVersion('0.3.51')
-    .addServer(
-      isProd ? 'https://api.babynounu.com/' : 'http://localhost:3000/',
-      'Local environment',
-    )
-    .addServer('https://staging.yourapi.com/', 'Staging')
-    .addServer('https://api.babynounu.com/', 'Production')
-    .addTag('Baby Nounu')
     .build();
+  const document = SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup('api/docs', app, document);
 
-  const document = SwaggerModule.createDocument(app, options);
-  SwaggerModule.setup('api-docs', app, document);
-
-  // Utiliser le port 3000 pour éviter les conflits
   const port = process.env.PORT || 3000;
+  const HOST_URL = process.env.HOST_URL;
   await app.listen(port);
-  console.log(`Application démarrée sur le port ${port}`);
-} 
+
+  console.log(`\n🚀 BabyNounu API running on  ${HOST_URL}:${port}`);
+  console.log(`📚 Swagger docs at ${HOST_URL}:${port}/api/docs`);
+}
+
 bootstrap();

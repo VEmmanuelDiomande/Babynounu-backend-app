@@ -1,62 +1,78 @@
 import { Module } from '@nestjs/common';
-import { UserModule } from './app/user/user.module';
-import { UserController } from './app/user/user.controller';
-import { UserService } from './app/user/user.service';
-import { AuthModule } from './app/auth/auth.module';
-import { ConfigModule } from '@nestjs/config';
-import { ParentModule } from './app/parent/parent.module';
-import { PaiementModule } from './app/paiement/paiement.module';
-import { SettingModule } from './app/setting/setting.module';
-import { NotificationModule } from './app/notification/notification.module';
-import { MediaModule } from './app/media/media.module';
-import { RoleModule } from './app/role/role.module';
-import { AbonnementModule } from './app/abonnement/abonnement.module';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
-import { JobModule } from './app/job/job.module';
-import { JobApplicationModule } from './app/job-application/job-application.module';
-import { ParameterModule } from './app/parameter/parameter.module';
-import { NounusModule } from './app/nounus/nounus.module';
-import { RoomsModule } from './app/rooms/rooms.module';
-import { MessagesModule } from './app/messages/messages.module';
-import { ChatModule } from './app/chat/chat.module';
-import { DatabaseModule } from './database/database.module';
-import { AdministrateurModule } from './app/administrateur/administrateur.module';
-import { ContractsModule } from './app/contracts/contracts.module';
-import { ChatGateway } from './app/chat/chat.gateway';
+
+// Infrastructure
+import { PrismaModule } from './infrastructure/prisma/prisma.module';
+import { ConfigModule } from './infrastructure/config/config.module';
+import { RepositoriesModule } from './infrastructure/repositories/repositories.module';
+
+// Presentation
+import { AuthPresentationModule } from './presentation/controllers/auth.presentation.module';
+import { ProfilePresentationModule } from './presentation/controllers/profile.presentation.module';
+import { NounuPresentationModule } from './presentation/controllers/nounu.presentation.module';
+import { ParentPresentationModule } from './presentation/controllers/parent.presentation.module';
+import { ParameterPresentationModule } from './presentation/controllers/parameter.presentation.module';
+import { JobPresentationModule } from './presentation/controllers/job.presentation.module';
+import { ChatPresentationModule } from './presentation/controllers/chat.presentation.module';
+import { NotificationPresentationModule } from './presentation/controllers/notification.presentation.module';
+import { PaymentPresentationModule } from './presentation/controllers/payment.presentation.module';
+import { MediaPresentationModule } from './presentation/controllers/media.presentation.module';
+import { AdminPresentationModule } from './presentation/controllers/admin.presentation.module';
+import { ContractPresentationModule } from './presentation/controllers/contract.presentation.module';
+import { ReviewPresentationModule } from './presentation/controllers/review.presentation.module';
+import { LikePresentationModule } from './presentation/controllers/like.presentation.module';
+import { GatewayModule } from './presentation/gateways/gateway.module';
+import { PushNotificationPresentationModule } from './presentation/controllers/push-notification.presentation.module';
 
 @Module({
   imports: [
-    DatabaseModule,
-    ConfigModule.forRoot({
-      isGlobal: true,
-    }),
+    ConfigModule,
+    PrismaModule,
+    RepositoriesModule,
+
+    ThrottlerModule.forRoot([
+      // {
+      //   name: 'default',
+      //   ttl: 600000,
+      //   limit: 300,
+      // },
+      // {
+      //   name: 'auth',
+      //   ttl: 60000,
+      //   limit: 5,
+      // },
+    ]),
+
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'uploads'), // Dossier accessible publiquement
-      serveRoot: '/uploads', // URL publique (http://localhost:3000/uploads)
+      rootPath: join(__dirname, '..', 'uploads'),
+      serveRoot: '/uploads',
     }),
-    UserModule,
-    AuthModule,
-    ParentModule,
-    PaiementModule,
-    SettingModule,
-    NotificationModule,
-    JobModule,
-    MediaModule,
-    RoleModule,
-    AbonnementModule,
-    JobModule,
-    JobApplicationModule,
-    ParameterModule,
-    NounusModule,
-    RoomsModule,
-    MessagesModule,
-    ChatModule,
-    AdministrateurModule,
-    ContractsModule,
+
+    AuthPresentationModule,
+    ProfilePresentationModule,
+    NounuPresentationModule,
+    ParentPresentationModule,
+    ParameterPresentationModule,
+    JobPresentationModule,
+    ChatPresentationModule,
+    NotificationPresentationModule,
+    PaymentPresentationModule,
+    MediaPresentationModule,
+    AdminPresentationModule,
+    ContractPresentationModule,
+    ReviewPresentationModule,
+    LikePresentationModule,
+    GatewayModule,
+    PushNotificationPresentationModule,
   ],
-  controllers: [],
-  providers: [],
-  exports: [],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}

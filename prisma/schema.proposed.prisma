@@ -1,0 +1,522 @@
+// BabyNounu — Prisma Schema (MySQL)
+// Architecture refondue — 3 services : garde d'enfants, ménage, cuisine
+// 2 rôles : prestataire (cherche du travail) / parent (cherche de l'aide)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+//  ENUMS
+// ============================================================
+
+enum UserRole {
+  admin
+  prestataire
+  parent
+}
+
+enum ServiceType {
+  garde_enfants
+  menage
+  cuisine
+}
+
+enum PrestataireStatus {
+  disponible
+  indisponible
+  occupe
+}
+
+enum CertifStatus {
+  Approved
+  Pending
+  Rejected
+}
+
+enum MessageType {
+  Message
+  Proposition
+}
+
+enum ProposalStatus {
+  Accepted
+  Refused
+  Pending
+}
+
+enum ContractStatus {
+  Accepted
+  Pending
+  Canceled
+}
+
+enum MediaType {
+  photo_profil
+  photo_identite
+  document
+  photo_travail
+}
+
+enum SubscriptionStatus {
+  active
+  expired
+  canceled
+}
+
+// ============================================================
+//  CORE: USER
+// ============================================================
+
+model User {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  email       String   @unique
+  password    String
+  role        UserRole @default(parent)
+  accessToken String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  prestataire     ProfilPrestataire?
+  parent          ProfilParent?
+  jobs            Job[]
+  jobApplications JobApplication[]
+  abonnements     Subscription[]
+  medias          Media[]
+  notifications      Notification[] @relation("NotificationRecipient")
+  sentNotifications Notification[] @relation("NotificationSender")
+  payments        Payment[]
+  roomSender      Room[] @relation("RoomSender")
+  roomReceiver    Room[] @relation("RoomReceiver")
+  messages        Message[]
+  unreadCounts    RoomUnreadCount[]
+
+  @@map("users")
+}
+
+// ============================================================
+//  REFERENCE DATA (remplace Parameter / TypeParameter)
+// ============================================================
+
+model Zone {
+  id        Int      @id @default(autoincrement())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  prestatairePreferences PrestatairePreference[]
+  parentPreferences      ParentPreference[]
+  jobs                   Job[]
+
+  @@map("zones")
+}
+
+model Horaire {
+  id        Int      @id @default(autoincrement())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  prestatairePreferences PrestatairePreference[]
+  parentPreferences      ParentPreference[]
+
+  @@map("horaires")
+}
+
+model TrancheAge {
+  id        Int      @id @default(autoincrement())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  prestatairePreferences PrestatairePreference[]
+  parentPreferences      ParentPreference[]
+
+  @@map("tranches_age")
+}
+
+model Langue {
+  id        Int      @id @default(autoincrement())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  prestatairePreferences PrestatairePreference[]
+  parentPreferences      ParentPreference[]
+
+  @@map("langues")
+}
+
+model FrequenceService {
+  id        Int      @id @default(autoincrement())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  prestatairePreferences PrestatairePreference[]
+  parentPreferences      ParentPreference[]
+
+  @@map("frequence_services")
+}
+
+// ============================================================
+//  PROFILES
+// ============================================================
+
+model ProfilPrestataire {
+  id                    String            @id @default(uuid())
+  fullname              String
+  age                   String
+  phone                 String            @unique
+  anneesExperience      String            @map("annees_experience")
+  tarifHoraire          String            @map("tarif_horaire")
+  tarifMensuel          String            @map("tarif_mensuel")
+  status                PrestataireStatus @default(disponible)
+  serviceType           ServiceType       @map("service_type")
+  points                Float             @default(0)
+  flexibiliteTarifaire  Boolean           @default(false) @map("flexibilite_tarifaire")
+  urgences              Boolean           @default(false)
+  certif                CertifStatus      @default(Pending)
+  evaluationPrecedentes String            @map("evaluation_precedentes") @db.Text
+  references            String            @db.Text
+  courteBiographie      String            @map("courte_biographie") @db.Text
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  deletedAt             DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+
+  preference PrestatairePreference?
+  rooms      Room[] @relation("RoomPrestataire")
+  medias     Media[]
+
+  @@map("profil_prestataires")
+}
+
+model ProfilParent {
+  id                         String   @id @default(uuid())
+  fullname                   String?
+  email                      String
+  phone                      String
+  numberOfChildren           String   @map("number_of_children")
+  budgetEstimated            String   @map("budget_estimated")
+  informationsComplementaires String? @map("informations_complementaires") @db.Text
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  deletedAt                  DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @unique
+
+  preference ParentPreference?
+  rooms      Room[] @relation("RoomParent")
+  jobs       Job[]
+  medias     Media[]
+
+  @@map("profil_parents")
+}
+
+// ============================================================
+//  PREFERENCES (1 profil = 1 préférence, relations simples)
+// ============================================================
+
+model PrestatairePreference {
+  id            Int      @id @default(autoincrement())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  deletedAt     DateTime?
+
+  prestataire   ProfilPrestataire @relation(fields: [prestataireId], references: [id], onDelete: Cascade)
+  prestataireId String   @unique
+
+  zone         Zone?            @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zoneId       Int?
+  horaire      Horaire?         @relation(fields: [horaireId], references: [id], onDelete: Cascade)
+  horaireId    Int?
+  trancheAge   TrancheAge?      @relation(fields: [trancheAgeId], references: [id], onDelete: Cascade)
+  trancheAgeId Int?
+  langue       Langue?          @relation(fields: [langueId], references: [id], onDelete: Cascade)
+  langueId     Int?
+  frequence    FrequenceService? @relation(fields: [frequenceId], references: [id], onDelete: Cascade)
+  frequenceId  Int?
+
+  @@map("prestataire_preferences")
+}
+
+model ParentPreference {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  parent   ProfilParent @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  parentId String   @unique
+
+  serviceType ServiceType? @map("service_type")
+  zone        Zone?            @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zoneId      Int?
+  horaire     Horaire?         @relation(fields: [horaireId], references: [id], onDelete: Cascade)
+  horaireId   Int?
+  trancheAge  TrancheAge?      @relation(fields: [trancheAgeId], references: [id], onDelete: Cascade)
+  trancheAgeId Int?
+  langue      Langue?          @relation(fields: [langueId], references: [id], onDelete: Cascade)
+  langueId    Int?
+  frequence   FrequenceService? @relation(fields: [frequenceId], references: [id], onDelete: Cascade)
+  frequenceId Int?
+
+  @@map("parent_preferences")
+}
+
+// ============================================================
+//  JOBS
+// ============================================================
+
+model Job {
+  id                        Int        @id @default(autoincrement())
+  titre                     String
+  description               String     @db.Text
+  moyensDeContact           String     @map("moyens_de_contact") @db.Text
+  serviceType               ServiceType @map("service_type")
+  combinaisonService        Boolean    @default(false) @map("combinaison_service")
+  inclusWeekend             Boolean    @default(false) @map("inclus_weekend")
+  nombreEnfants             String?    @map("nombre_enfants")
+  experienceMinimum         Boolean    @default(false) @map("experience_minimum")
+  anneeExperience           String?    @map("annee_experience")
+  tarifPropose              String?    @map("tarif_propose")
+  negociable                Boolean    @default(false)
+  dateDebut                 String     @default("") @map("date_debut")
+  missionUrgente            Boolean    @default(false) @map("mission_urgente")
+  descriptionComplementaire String     @map("description_complementaire") @db.Text
+  createdAt                 DateTime   @default(now()) @map("created_at")
+  updatedAt                 DateTime   @updatedAt @map("updated_at")
+  deletedAt                 DateTime?  @map("deleted_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  zone   Zone?  @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  zoneId Int?
+
+  jobApplications JobApplication[]
+  notifications    Notification[]
+  medias           Media[]
+
+  @@map("jobs")
+}
+
+model JobApplication {
+  id        Int      @id @default(autoincrement())
+  isApply   Boolean  @default(false) @map("is_apply")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId  Int
+
+  @@unique([userId, jobId])
+  @@map("job_applications")
+}
+
+// ============================================================
+//  CHAT / MESSAGING
+// ============================================================
+
+model Room {
+  id Int @id @default(autoincrement())
+
+  sender   User   @relation("RoomSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId String
+  receiver User   @relation("RoomReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiverId String
+
+  prestataire ProfilPrestataire? @relation("RoomPrestataire", fields: [prestataireId], references: [id], onDelete: Cascade)
+  prestataireId String?
+  parent       ProfilParent?     @relation("RoomParent", fields: [parentId], references: [id], onDelete: Cascade)
+  parentId     String?
+
+  messages     Message[]
+  unreadCounts RoomUnreadCount[]
+  contracts    Contract[]
+
+  @@map("rooms")
+}
+
+model Message {
+  id                 Int            @id @default(autoincrement())
+  content            String         @db.Text
+  isRead             Boolean        @default(false) @map("is_read")
+  type               MessageType    @default(Message)
+  isProposition      Boolean        @default(false) @map("is_proposition")
+  propositionExpired String?        @map("proposition_expired")
+  proposalStatus     ProposalStatus @default(Pending) @map("proposal_status")
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  deletedAt          DateTime?
+
+  sender   User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  senderId String
+  room     Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId   Int
+
+  contracts Contract[]
+
+  @@map("messages")
+}
+
+model RoomUnreadCount {
+  id     Int @id @default(autoincrement())
+  count  Int @default(0)
+
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId Int
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@unique([roomId, userId])
+  @@map("room_unread_counts")
+}
+
+model Contract {
+  id        Int            @id @default(autoincrement())
+  status    ContractStatus @default(Pending)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  deletedAt DateTime?
+
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    Int
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId Int?
+
+  @@map("contracts")
+}
+
+// ============================================================
+//  NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  type       String
+  message    String
+  tolinkId   String?  @map("tolink_id")
+  isRead     Boolean  @default(false) @map("is_read")
+  isActions  Boolean  @default(false) @map("is_actions")
+  isDeleted  Boolean  @default(false) @map("is_deleted")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  user     User   @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  userId   String
+  sender   User?  @relation("NotificationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId String?
+  job      Job?   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId    Int?
+
+  @@map("notifications")
+}
+
+// ============================================================
+//  PAYMENTS & SUBSCRIPTIONS
+// ============================================================
+
+model Payment {
+  id            String    @id @default(uuid())
+  transactionId String?   @unique @map("transaction_id")
+  operatorId    String?   @unique @map("operator_id")
+  paymentDate   DateTime? @map("payment_date")
+  amount        Float
+  currency      String?
+  status        String?
+  paymentToken  String?   @map("payment_token")
+  paymentType   String?   @map("payment_type")
+  paymentMethod String?   @map("payment_method")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  subscriptions Subscription[]
+
+  @@map("payments")
+}
+
+model Subscription {
+  id         String             @id @default(uuid())
+  status     SubscriptionStatus @default(active)
+  expiresAt  DateTime?          @map("expires_at")
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+  deletedAt  DateTime?
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  payment    Payment?   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  paymentId  String?
+
+  @@map("subscriptions")
+}
+
+// ============================================================
+//  MEDIA
+// ============================================================
+
+model Media {
+  id           String    @id @default(uuid())
+  originalName String    @map("original_name")
+  filename     String
+  path         String
+  originalUrl  String?   @map("original_url")
+  type         MediaType @default(photo_profil)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  user        User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String?
+  job         Job?    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId       Int?
+
+  @@map("medias")
+}
+
+// ============================================================
+//  APP SETTINGS
+// ============================================================
+
+model AppSetting {
+  id          Int      @id @default(autoincrement())
+  appName     String?  @map("app_name")
+  version     String?
+  description String?
+  lastUpdate  DateTime @default(now()) @map("last_update")
+  isActive    Boolean  @default(true) @map("is_active")
+  settings    Json?
+
+  @@map("app_settings")
+}

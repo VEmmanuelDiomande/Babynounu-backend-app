@@ -1,7 +1,7 @@
 // src/interceptors/sharp-disk.interceptor.ts
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { Observable, throwError } from 'rxjs';
-import * as sharp from 'sharp';
+import sharp from 'sharp';
 import { Logger } from '@nestjs/common';
 import { createReadStream, unlinkSync, existsSync } from 'fs';
 import { promisify } from 'util';
@@ -18,7 +18,7 @@ export class SharpDiskInterceptor implements NestInterceptor {
     resizeOptions: {
       width: number;
       height: number;
-      fit?: keyof sharp.FitEnum;
+      fit?: string;
       quality?: number;
     };
   }) {}
@@ -43,7 +43,7 @@ export class SharpDiskInterceptor implements NestInterceptor {
                 .resize({
                   width: this.options.resizeOptions.width,
                   height: this.options.resizeOptions.height,
-                  fit: this.options.resizeOptions.fit || 'cover',
+                  fit: (this.options.resizeOptions.fit || 'cover') as any,
                   withoutEnlargement: true
                 })
                 .jpeg({ 
@@ -84,7 +84,7 @@ export const SharpTransform = (options: {
   resizeOptions: {
     width: number;
     height: number;
-    fit?: keyof sharp.FitEnum;
+    fit?: string;
     quality?: number;
   };
 }) => new SharpDiskInterceptor(options);

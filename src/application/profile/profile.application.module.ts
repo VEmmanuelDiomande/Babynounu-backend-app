@@ -1,0 +1,55 @@
+import { Module } from '@nestjs/common';
+import {
+  GetUserProfileUseCase,
+  CreateParentProfileUseCase,
+  UpdateParentProfileUseCase,
+  CreateNounuProfileUseCase,
+  UpdateNounuProfileUseCase,
+  GetNounuProfileUseCase,
+  GetMyNounuProfileUseCase,
+  GetMyParentProfileUseCase,
+  GetAllNounusUseCase,
+  SearchNounusUseCase,
+  DeleteNounuUseCase,
+  GetAllParentsUseCase,
+  GetParentByIdUseCase,
+  DeleteParentUseCase,
+} from './profile.usecases';
+import { RepositoriesModule } from '../../infrastructure/repositories/repositories.module';
+
+@Module({
+  imports: [RepositoriesModule],
+  providers: [
+    GetUserProfileUseCase,
+    CreateParentProfileUseCase,
+    UpdateParentProfileUseCase,
+    CreateNounuProfileUseCase,
+    UpdateNounuProfileUseCase,
+    GetNounuProfileUseCase,
+    GetMyNounuProfileUseCase,
+    GetMyParentProfileUseCase,
+    GetAllNounusUseCase,
+    SearchNounusUseCase,
+    DeleteNounuUseCase,
+    GetAllParentsUseCase,
+    GetParentByIdUseCase,
+    DeleteParentUseCase,
+  ],
+  exports: [
+    GetUserProfileUseCase,
+    CreateParentProfileUseCase,
+    UpdateParentProfileUseCase,
+    CreateNounuProfileUseCase,
+    UpdateNounuProfileUseCase,
+    GetNounuProfileUseCase,
+    GetMyNounuProfileUseCase,
+    GetMyParentProfileUseCase,
+    GetAllNounusUseCase,
+    SearchNounusUseCase,
+    DeleteNounuUseCase,
+    GetAllParentsUseCase,
+    GetParentByIdUseCase,
+    DeleteParentUseCase,
+  ],
+})
+export class ProfileApplicationModule {}

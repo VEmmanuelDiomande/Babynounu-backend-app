@@ -1,0 +1,620 @@
+// BabyNounu — Prisma Schema (MySQL)
+// Clean Architecture — Domain driven
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ============================================================
+//  ENUMS
+// ============================================================
+
+enum CertifStatus {
+  Approved
+  Pending
+  Rejected
+}
+
+enum MessageType {
+  Message
+  Proposition
+}
+
+enum ProposalStatus {
+  Accepted
+  Refused
+  Pending
+}
+
+enum ContractStatus {
+  Accepted
+  Pending
+  Canceled
+  Completed
+}
+
+enum NounuStatus {
+  disponible
+  indisponible
+}
+
+// ============================================================
+//  CORE ENTITIES
+// ============================================================
+
+model User {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  email       String   @unique
+  password     String
+  accessToken  String?  @db.Text
+  refreshToken String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  role          Parameter? @relation("UserRole", fields: [roleId], references: [id])
+  roleId        Int?
+  typeProfil    Parameter? @relation("UserTypeProfil", fields: [typeProfilId], references: [id])
+  typeProfilId  Int?
+
+  nounus          ProfilNounu[]
+  parents         ProfilParent[]
+  abonnements     Subscription[]
+  medias          Media[]
+  notifications   Notification[]      @relation("NotificationRecipient")
+  sentNotifications Notification[]    @relation("NotificationSender")
+  jobApplications JobApplication[]
+  jobs            Job[]
+  payments        Payment[]
+  roomSender      Room[]              @relation("RoomSender")
+  roomReceiver    Room[]              @relation("RoomReceiver")
+  messages        Message[]
+  unreadCounts    RoomUnreadCount[]
+  deviceTokens    DeviceToken[]
+  reviewsGiven    Review[]   @relation("ReviewReviewer")
+  nounuLikes      NounuLike[]
+
+  @@map("users")
+}
+
+model Parameter {
+  id          Int       @id @default(autoincrement())
+  name        String
+  slug        String?
+  description String?
+  priority    Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  // Relations
+  typeParameter   TypeParameter? @relation(fields: [typeParameterId], references: [id])
+  typeParameterId Int?
+
+  // Reverse relations
+  usersTypeProfil   User[]      @relation("UserTypeProfil")
+  usersRole         User[]      @relation("UserRole")
+  subscriptions     Subscription[]
+  mediasType        Media[]
+  preferencesHoraire       Preference[] @relation("preferencesHoraire")
+  preferencesZone          Preference[] @relation("preferencesZone")
+  preferencesTranche       Preference[] @relation("preferencesTranche")
+  preferencesBesions       Preference[] @relation("preferencesBesions")
+  preferencesTypeServices  Preference[] @relation("preferencesTypeServices")
+  preferencesEquipement    Preference[] @relation("preferencesEquipement")
+  preferencesCriteres      Preference[] @relation("preferencesCriteres")
+  preferencesCertifs       Preference[] @relation("preferencesCertifs")
+  preferencesGarde         Preference[] @relation("preferencesGarde")
+  preferencesAide          Preference[] @relation("preferencesAide")
+  preferencesFrequence     Preference[] @relation("preferencesFrequence")
+  preferencesHoraireSouh   Preference[] @relation("preferencesHoraireSouh")
+  preferencesAdress        Preference[] @relation("preferencesAdress")
+  preferencesDispo         Preference[] @relation("preferencesDispo")
+  preferencesZoneGeo       Preference[] @relation("preferencesZoneGeo")
+  preferencesCompetance    Preference[] @relation("preferencesCompetance")
+  preferencesModePaiement  Preference[] @relation("preferencesModePaiement")
+  preferencesTaches        Preference[] @relation("preferencesTaches")
+  preferencesLangue        Preference[] @relation("preferencesLangue")
+  preferencesCriteresSel   Preference[] @relation("preferencesCriteresSel")
+  rolePermissions          RolePermission[] @relation("RolePermissionRole")
+
+  @@map("parameters")
+}
+
+model TypeParameter {
+  id        Int      @id @default(autoincrement())
+  slug      String?
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  parameters Parameter[]
+
+  @@map("parameter_types")
+}
+
+// ============================================================
+//  PROFILES
+// ============================================================
+
+model ProfilParent {
+  id          String   @id @default(uuid())
+  fullname    String?
+  email       String
+  phone       String
+  numberOfChildren String  @map("number_of_children")
+  budgetEstimated  String  @map("budget_estimated")
+  informationsComplementaires String? @map("informations_complementaires") @db.Text
+  restricted  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  preferences Preference[]
+  rooms       Room[]     @relation("RoomParent")
+
+  @@map("profil_parents")
+}
+
+model ProfilNounu {
+  id              String       @id @default(uuid())
+  fullname        String
+  age             String
+  phone           String       @unique
+  anneesExperience String      @map("annees_experience")
+  tarifHoraire    String       @map("tarif_horaire")
+  tarifMensuel    String       @map("tarif_mensuel")
+  status          NounuStatus  @default(disponible)
+  points          Float        @default(0)
+  flexibiliteTarifaire Boolean @default(false) @map("flexibilite_tarifaire")
+  urgences        Boolean      @default(false)
+  certif          CertifStatus @default(Pending)
+  evaluationPrecedentes String @map("evaluation_precedentes") @db.Text
+  references      String       @db.Text
+  courteBiographie String      @map("courte_biographie") @db.Text
+  restricted       Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  preferences Preference[]
+  rooms       Room[]     @relation("RoomNounou")
+  reviews     Review[]   @relation("ReviewNounu")
+  likes       NounuLike[]
+
+  @@map("profil_nounus")
+}
+
+model Preference {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  // Owner relations (polymorphic — only one set at a time)
+  parent     ProfilParent? @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  parentId   String?
+  nounu      ProfilNounu?  @relation(fields: [nounuId], references: [id], onDelete: Cascade)
+  nounuId    String?
+  job        Job?          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId      Int?
+
+  // Parameter relations (each links to a Parameter row)
+  horaireDisponible       Parameter? @relation("preferencesHoraire", fields: [horaireDisponibleId], references: [id], onDelete: Cascade)
+  horaireDisponibleId     Int?       @map("horaire_disponible_id")
+  zoneDeTravail           Parameter? @relation("preferencesZone", fields: [zoneDeTravailId], references: [id], onDelete: Cascade)
+  zoneDeTravailId         Int?       @map("zone_de_travail_id")
+  typeServices            Parameter? @relation("preferencesTypeServices", fields: [typeServicesId], references: [id], onDelete: Cascade)
+  typeServicesId          Int?       @map("type_services_id")
+  equipementMenager       Parameter? @relation("preferencesEquipement", fields: [equipementMenagerId], references: [id], onDelete: Cascade)
+  equipementMenagerId     Int?       @map("equipement_menager_id")
+  criteresSpecifiques     Parameter? @relation("preferencesCriteres", fields: [criteresSpecifiquesId], references: [id], onDelete: Cascade)
+  criteresSpecifiquesId   Int?       @map("criteres_specifiques_id")
+  certificationsCriteres  Parameter? @relation("preferencesCertifs", fields: [certificationsCriteresId], references: [id], onDelete: Cascade)
+  certificationsCriteresId Int?      @map("certifications_criteres_id")
+  trancheAgeEnfants       Parameter? @relation("preferencesTranche", fields: [trancheAgeEnfantsId], references: [id], onDelete: Cascade)
+  trancheAgeEnfantsId     Int?       @map("tranche_age_enfants_id")
+  besionsSpecifiques      Parameter? @relation("preferencesBesions", fields: [besionsSpecifiquesId], references: [id], onDelete: Cascade)
+  besionsSpecifiquesId    Int?       @map("besions_specifiques_id")
+  gardeEnfants            Parameter? @relation("preferencesGarde", fields: [gardeEnfantsId], references: [id], onDelete: Cascade)
+  gardeEnfantsId          Int?       @map("garde_enfants_id")
+  aideMenagere            Parameter? @relation("preferencesAide", fields: [aideMenagereId], references: [id], onDelete: Cascade)
+  aideMenagereId          Int?       @map("aide_menagere_id")
+  frequenceDesServices    Parameter? @relation("preferencesFrequence", fields: [frequenceDesServicesId], references: [id], onDelete: Cascade)
+  frequenceDesServicesId  Int?       @map("frequence_des_services_id")
+  horaireSouhaites        Parameter? @relation("preferencesHoraireSouh", fields: [horaireSouhaitesId], references: [id], onDelete: Cascade)
+  horaireSouhaitesId      Int?       @map("horaire_souhaites_id")
+  adress                  Parameter? @relation("preferencesAdress", fields: [adressId], references: [id], onDelete: Cascade)
+  adressId                Int?       @map("adress_id")
+  disponibilityPrestataire Parameter? @relation("preferencesDispo", fields: [disponibilityPrestataireId], references: [id], onDelete: Cascade)
+  disponibilityPrestataireId Int?    @map("disponibility_du_prestataire_id")
+  zoneGeographiquePrestataire Parameter? @relation("preferencesZoneGeo", fields: [zoneGeographiquePrestataireId], references: [id], onDelete: Cascade)
+  zoneGeographiquePrestataireId Int? @map("zone_geographique_prestataire_id")
+  competanceSpecifique    Parameter? @relation("preferencesCompetance", fields: [competanceSpecifiqueId], references: [id], onDelete: Cascade)
+  competanceSpecifiqueId  Int?       @map("competance_specifique_id")
+  modeDePaiement          Parameter? @relation("preferencesModePaiement", fields: [modeDePaiementId], references: [id], onDelete: Cascade)
+  modeDePaiementId        Int?       @map("mode_de_paiement_id")
+  taches                  Parameter? @relation("preferencesTaches", fields: [tachesId], references: [id], onDelete: Cascade)
+  tachesId                Int?       @map("taches_id")
+  langueParler            Parameter? @relation("preferencesLangue", fields: [langueParlerId], references: [id], onDelete: Cascade)
+  langueParlerId          Int?       @map("langue_parler_id")
+  criteresSelections      Parameter? @relation("preferencesCriteresSel", fields: [criteresSelectionsId], references: [id], onDelete: Cascade)
+  criteresSelectionsId    Int?       @map("criteres_selections_id")
+
+  @@map("user_preferences")
+}
+
+// ============================================================
+//  JOBS
+// ============================================================
+
+model Job {
+  id                        Int      @id @default(autoincrement())
+  titre                     String   @default("")
+  description               String   @db.Text
+  moyensDeContact           String   @map("moyens_de_contact") @db.Text
+  combinaisonService        Boolean  @default(false) @map("combinaison_service")
+  inclusWeekend             Boolean  @default(false) @map("inclus_weekend")
+  nombreEnfants             String?  @map("nombre_enfants")
+  experienceMinimun         Boolean  @default(false) @map("experience_minimun")
+  anneeExperience           String?  @map("annee_experience")
+  tarifPropose              String?  @map("tarif_propose")
+  negociable                Boolean  @default(false)
+  dateDebut                 String   @default("") @map("date_debut")
+  periode                   String?  @map("periode")
+  missionUrgente            Boolean  @default(false) @map("mission_urgente")
+  suspended                 Boolean  @default(false)
+  priority                  Int      @default(0)
+  descriptionComplementaire String   @map("description_complementaire") @db.Text
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+  deletedAt                 DateTime? @map("deleted_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  preferences      Preference[]
+  jobApplications  JobApplication[]
+  notifications    Notification[]
+  medias           Media[]
+
+  @@map("jobs")
+}
+
+model JobApplication {
+  id        Int      @id @default(autoincrement())
+  limit     Int      @default(0)
+  isApply   Boolean  @default(false) @map("is_apply")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId  Int
+
+  @@map("job_applications")
+}
+
+// ============================================================
+//  CHAT / MESSAGING
+// ============================================================
+
+model Room {
+  id Int @id @default(autoincrement())
+
+  sender   User   @relation("RoomSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId String
+  receiver User   @relation("RoomReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  receiverId String
+
+  nounu    ProfilNounu?  @relation("RoomNounou", fields: [nounuId], references: [id], onDelete: Cascade)
+  nounuId  String?
+  parent   ProfilParent? @relation("RoomParent", fields: [parentId], references: [id], onDelete: Cascade)
+  parentId String?
+
+  messages     Message[]
+  unreadCounts RoomUnreadCount[]
+  contracts    Contract[]
+  deletedAt    DateTime?
+
+  @@map("rooms")
+}
+
+model Message {
+  id                 Int           @id @default(autoincrement())
+  content            String        @db.Text
+  isRead             Boolean       @default(false) @map("is_read")
+  type               MessageType  @default(Message)
+  isProposition      Boolean       @default(false) @map("is_proposition")
+  propositionExpired String?       @map("proposition_expired")
+  proposalStatus     ProposalStatus @default(Pending) @map("proposal_status")
+  montant            Float?        @map("montant")
+  periode            String?       @map("periode")
+  attachmentUrl      String?       @map("attachment_url")
+  attachmentName     String?       @map("attachment_name")
+  attachmentType     String?       @map("attachment_type")
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deletedAt          DateTime?
+
+  sender   User   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  senderId String
+  room     Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId   Int
+
+  contracts Contract[]
+
+  @@map("messages")
+}
+
+model RoomUnreadCount {
+  id     Int @id @default(autoincrement())
+  count  Int @default(0)
+
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId Int
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@unique([roomId, userId])
+  @@map("room_unread_counts")
+}
+
+model Contract {
+  id        Int           @id @default(autoincrement())
+  status    ContractStatus @default(Pending)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  deletedAt DateTime?
+
+  room      Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  roomId    Int
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  messageId Int?
+  reviews   Review[]
+
+  @@map("contracts")
+}
+
+// ============================================================
+//  NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id         Int      @id @default(autoincrement())
+  type       String
+  title      String?  @default("Notification")
+  message    String
+  tolinkId   String?  @map("tolink_id")
+  isRead     Boolean  @default(false) @map("is_read")
+  isActions  Boolean  @default(false) @map("is_actions")
+  isDeleted  Boolean  @default(false) @map("is_deleted")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  user     User   @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  userId   String
+  sender   User?  @relation("NotificationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  senderId String?
+  job      Job?   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId    Int?
+
+  @@map("notifications")
+}
+
+// ============================================================
+//  PACKS (subscription plans manageable by admin)
+// ============================================================
+
+model Pack {
+  id          Int       @id @default(autoincrement())
+  name        String
+  slug        String?   @unique
+  description String?   @db.Text
+  price       Float
+  currency    String    @default("FCFA")
+  durationDays Int      @default(30) @map("duration_days")
+  features    Json?
+  isActive    Boolean   @default(true) @map("is_active")
+  priority    Int       @default(0)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  subscriptions Subscription[]
+
+  @@map("packs")
+}
+
+// ============================================================
+//  PAYMENTS & SUBSCRIPTIONS
+// ============================================================
+
+model Payment {
+  id            String    @id @default(uuid())
+  transactionId String?   @unique @map("transaction_id")
+  operatorId    String?   @unique @map("operator_id")
+  paymentDate   DateTime? @map("payment_date")
+  amount        Float
+  currency      String?
+  status        String?
+  paymentToken  String?   @map("payment_token")
+  paymentType   String?   @map("payment_type")
+  paymentMethod String?   @map("payment_method")
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  subscriptions Subscription[]
+
+  @@map("payments")
+}
+
+model Subscription {
+  id         String   @id @default(uuid())
+  status     String   @default("active")
+  expiresAt  DateTime? @map("expires_at")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  deletedAt  DateTime?
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  payment    Payment?   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  paymentId  String?
+  type       Parameter? @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  typeId     Int?
+  pack       Pack?      @relation(fields: [packId], references: [id], onDelete: Cascade)
+  packId     Int?
+
+  @@map("subscriptions")
+}
+
+// ============================================================
+//  MEDIA
+// ============================================================
+
+model Media {
+  id           String   @id @default(uuid())
+  originalName String   @map("original_name")
+  filename     String
+  path         String
+  originalUrl  String?  @map("original_url")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
+
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String?
+  job         Job?       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId       Int?
+  typeMedia   Parameter? @relation(fields: [typeMediaId], references: [id])
+  typeMediaId Int?
+
+  @@map("medias")
+}
+
+// ============================================================
+//  PERMISSIONS
+// ============================================================
+
+model Permission {
+  id          Int       @id @default(autoincrement())
+  name        String
+  slug        String    @unique
+  description String?
+  module      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+
+  role       Parameter  @relation("RolePermissionRole", fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ============================================================
+//  DEVICE TOKENS (Push Notifications)
+// ============================================================
+
+model DeviceToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  platform  String   @default("android")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  deletedAt DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+
+  @@map("device_tokens")
+}
+
+// ============================================================
+//  REVIEWS & RATINGS
+// ============================================================
+
+model Review {
+  id          Int      @id @default(autoincrement())
+  rating      Float
+  comment     String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  reviewer    User         @relation("ReviewReviewer", fields: [reviewerId], references: [id], onDelete: Cascade)
+  reviewerId  String
+  nounu       ProfilNounu  @relation("ReviewNounu", fields: [nounuId], references: [id], onDelete: Cascade)
+  nounuId     String
+  contract    Contract?    @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  contractId  Int?
+
+  @@unique([reviewerId, contractId])
+  @@map("reviews")
+}
+
+// ============================================================
+//  LIKES (Nounu profiles)
+// ============================================================
+
+model NounuLike {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  nounu  ProfilNounu  @relation(fields: [nounuId], references: [id], onDelete: Cascade)
+  nounuId String
+
+  @@unique([userId, nounuId])
+  @@map("nounu_likes")
+}
+
+// ============================================================
+//  APP SETTINGS
+// ============================================================
+
+model AppSetting {
+  id         Int      @id @default(autoincrement())
+  appName    String?  @map("app_name")
+  version    String?
+  description String?
+  lastUpdate DateTime @default(now()) @map("last_update")
+  isActive   Boolean  @default(true) @map("is_active")
+  settings   Json?
+
+  @@map("app_settings")
+}
