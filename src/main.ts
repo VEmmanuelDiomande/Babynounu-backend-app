@@ -25,12 +25,15 @@ async function bootstrap() {
   }
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });
 
-  const corsOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:8100,http://localhost:8081,http://localhost:8084,http://localhost:8085')
-    .split(',')
-    .map((origin) => origin.trim());
+  const corsOriginsRaw = process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:8100,http://localhost:8081,http://localhost:8084,http://localhost:8085';
+  const isWildcard = corsOriginsRaw.trim() === '*';
 
   app.enableCors({
-    origin: corsOrigins,
+    origin: isWildcard
+      ? (origin: string | undefined, callback: (err: Error | null, ok?: boolean) => void) => {
+          callback(null, true);
+        }
+      : corsOriginsRaw.split(',').map((o) => o.trim()),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });

@@ -67,7 +67,9 @@ export class PaymentGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
     const subscription = await this.subscriptionRepo.findUserSubscription(data.userId);
     const hasActiveSubscription =
-      !!subscription && subscription.status === 'active' && new Date(subscription.expiresAt) > new Date();
+      !!subscription && subscription.status === 'active' && (
+        subscription.expiresAt === null || new Date(subscription.expiresAt) > new Date()
+      );
 
     client.emit('paymentStatus', {
       transactionId: data.transactionId,
@@ -84,7 +86,9 @@ export class PaymentGateway implements OnGatewayConnection, OnGatewayDisconnect 
   ) {
     const subscription = await this.subscriptionRepo.findUserSubscription(data.userId);
     const hasActiveSubscription =
-      !!subscription && subscription.status === 'active' && new Date(subscription.expiresAt) > new Date();
+      !!subscription && subscription.status === 'active' && (
+        subscription.expiresAt === null || new Date(subscription.expiresAt) > new Date()
+      );
 
     client.emit('subscriptionStatus', { hasActiveSubscription });
   }

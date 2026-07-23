@@ -7,6 +7,8 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { Inject } from '@nestjs/common';
 import { IUserRepository, IProfileRepository } from '../../domain';
+import { MailService } from '../../infrastructure/services/mail.service';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
 // Translate public sign-up type_profil values to the slugs stored in the parameters table
 const TYPE_PROFIL_INPUT_TO_DB: Record<string, string> = {
@@ -282,5 +284,72 @@ export class LogoutUseCase {
 
   async execute(userId: string): Promise<void> {
     await this.userRepo.update(userId, { accessToken: null as any, refreshToken: null as any });
+  }
+}
+
+@Injectable()
+export class ForgotPasswordUseCase {
+  constructor(
+    @Inject('IUserRepository') private readonly userRepo: IUserRepository,
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
+
+  async execute(email: string): Promise<{ message: string }> {
+    const user = await this.userRepo.findByEmail(email);
+    if (!user) {
+      return { message: 'Si cet email existe, un code de réinitialisation a été envoyé.' };
+    }
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    await this.prisma.passwordResetToken.create({
+      data: {
+        token: code,
+        userId: user.id,
+        expiresAt,
+      },
+    });
+
+    await this.mailService.sendPasswordResetCode(user.email, code);
+
+    return { message: 'Si cet email existe, un code de réinitialisation a été envoyé.' };
+  }
+}
+
+@Injectable()
+export class ResetPasswordUseCase {
+  constructor(
+    @Inject('IUserRepository') private readonly userRepo: IUserRepository,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  async execute(token: string, newPassword: string): Promise<{ message: string }> {
+    const resetToken = await this.prisma.passwordResetToken.findUnique({
+      where: { token },
+    });
+
+    if (!resetToken || resetToken.used || resetToken.expiresAt < new Date()) {
+      throw new BadRequestException('Code invalide ou expiré');
+    }
+
+    const user = await this.userRepo.findById(resetToken.userId);
+    if (!user) {
+      throw new BadRequestException('Utilisateur introuvable');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { password: hashedPassword },
+    });
+
+    await this.prisma.passwordResetToken.update({
+      where: { id: resetToken.id },
+      data: { used: true },
+    });
+
+    return { message: 'Mot de passe réinitialisé avec succès' };
   }
 }

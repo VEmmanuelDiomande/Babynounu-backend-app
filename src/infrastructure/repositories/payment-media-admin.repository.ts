@@ -76,6 +76,18 @@ export class PrismaPaymentRepository {
     });
   }
 
+  async findByGeniuspayReference(reference: string) {
+    return this.prisma.payment.findFirst({
+      where: {
+        metadata: {
+          path: ['geniuspayReference'],
+          equals: reference,
+        },
+      },
+      include: { user: true, subscriptions: true },
+    });
+  }
+
   async updatePayment(id: string, data: {
     status?: string;
     transactionId?: string;

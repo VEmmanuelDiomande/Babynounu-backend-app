@@ -88,10 +88,10 @@ export class InitiatePaymentUseCase {
     const transactionId = this.geniusPayService.generateTransactionId();
 
     const returnUrl = data.returnUrl
-      ? `${data.returnUrl}?transaction_id=${transactionId}`
+      ? `${data.returnUrl}?transaction_id=${transactionId}&userId=${userId}`
       : `${this.appConfig.frontendUrl}/payment/return?transaction_id=${transactionId}`;
     const errorUrl = data.returnUrl
-      ? `${data.returnUrl}?transaction_id=${transactionId}&status=error`
+      ? `${data.returnUrl}?transaction_id=${transactionId}&userId=${userId}&status=error`
       : `${this.appConfig.frontendUrl}/payment/return?transaction_id=${transactionId}&status=error`;
 
     const geniusPayResponse = await this.geniusPayService.initiatePayment({
@@ -151,27 +151,72 @@ export class VerifyPaymentUseCase {
     private readonly geniusPayService: GeniusPayService,
     private readonly subscriptionRepo: PrismaSubscriptionRepository,
     private readonly paymentGateway: PaymentGateway,
+    private readonly packRepo: PrismaPackRepository,
+    private readonly notifRepo: PrismaNotificationRepository,
   ) {}
 
   async execute(transactionId: string) {
-    const payment = await this.paymentRepo.findByTransactionId(transactionId);
+    let payment: any = await this.paymentRepo.findByTransactionId(transactionId);
+    if (!payment) {
+      payment = await this.paymentRepo.findByGeniuspayReference(transactionId);
+    }
     if (!payment) {
       throw new NotFoundException('Paiement introuvable pour cette transaction');
     }
 
+    const actualTransactionId = payment.transactionId;
+
+    // If payment is already confirmed in DB, skip GeniusPay verification
+    if (payment.status === 'Success') {
+      const subscription = await this.subscriptionRepo.findUserSubscription(payment.userId);
+      const hasActiveSubscription =
+        !!subscription && subscription.status === 'active' && (
+          subscription.expiresAt === null || new Date(subscription.expiresAt) > new Date()
+        );
+
+      // Auto-create subscription if missing
+      if (!hasActiveSubscription) {
+        await this.ensureSubscription(payment);
+      }
+
+      await this.paymentGateway.notifyPaymentStatus(payment.userId, actualTransactionId, {
+        status: 'Success',
+        isPayment: true,
+        hasActiveSubscription: true,
+        transactionId: actualTransactionId,
+      });
+
+      return {
+        paymentId: payment.id,
+        transactionId: actualTransactionId,
+        status: 'Success',
+        amount: payment.amount,
+        currency: payment.currency,
+      };
+    }
+
+    // Try GeniusPay verification
     const metadata = payment.metadata as any;
     const reference = metadata?.geniuspayReference || transactionId;
 
-    const verification = await this.geniusPayService.verifyPayment(reference);
+    let mappedStatus: string;
+    let verificationData: any = null;
 
-    const mappedStatus = mapGeniusPayStatus(verification.status);
+    try {
+      const verification = await this.geniusPayService.verifyPayment(reference);
+      mappedStatus = mapGeniusPayStatus(verification.status);
+      verificationData = verification.metadata;
+    } catch (error) {
+      this.logger.warn(`GeniusPay verification failed for ${transactionId}: ${(error as any)?.message}. Returning DB status: ${payment.status}`);
+      mappedStatus = payment.status;
+    }
 
     if (mappedStatus !== payment.status) {
       const updateData: any = {
         status: mappedStatus,
         metadata: {
           ...(payment.metadata as any || {}),
-          geniuspayVerification: verification.metadata,
+          geniuspayVerification: verificationData,
           lastVerifiedAt: new Date().toISOString(),
         },
       };
@@ -183,26 +228,80 @@ export class VerifyPaymentUseCase {
       await this.paymentRepo.updatePayment(payment.id, updateData);
     }
 
+    // Auto-create subscription if payment is now Success
+    if (mappedStatus === 'Success') {
+      await this.ensureSubscription(payment);
+    }
+
     const subscription = await this.subscriptionRepo.findUserSubscription(payment.userId);
     const hasActiveSubscription =
       !!subscription && subscription.status === 'active' && (
         subscription.expiresAt === null || new Date(subscription.expiresAt) > new Date()
       );
 
-    await this.paymentGateway.notifyPaymentStatus(payment.userId, transactionId, {
+    await this.paymentGateway.notifyPaymentStatus(payment.userId, actualTransactionId, {
       status: mappedStatus,
       isPayment: mappedStatus === 'Success',
       hasActiveSubscription,
-      transactionId,
+      transactionId: actualTransactionId,
     });
 
     return {
       paymentId: payment.id,
-      transactionId,
+      transactionId: actualTransactionId,
       status: mappedStatus,
       amount: payment.amount,
       currency: payment.currency,
     };
+  }
+
+  private async ensureSubscription(payment: any): Promise<void> {
+    const existingSub = await this.subscriptionRepo.findUserSubscription(payment.userId);
+    if (existingSub) return;
+
+    const metadata = payment.metadata as any;
+    const packId = metadata?.packId;
+
+    let expiresAt: Date | null = null;
+    let isLifetime = false;
+
+    if (packId) {
+      const pack = await this.packRepo.findById(packId);
+      if (pack && !pack.deletedAt) {
+        if (!pack.durationDays || pack.durationDays === 0) {
+          isLifetime = true;
+          expiresAt = null;
+        } else {
+          expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + pack.durationDays);
+        }
+      }
+    } else {
+      expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
+    }
+
+    const subscription = await this.subscriptionRepo.createSubscription({
+      userId: payment.userId,
+      status: 'active',
+      expiresAt,
+      paymentId: payment.id,
+      packId,
+    });
+
+    const expiryMsg = isLifetime
+      ? 'Votre abonnement a été activé avec succès (à vie).'
+      : `Votre abonnement a été activé avec succès jusqu'au ${expiresAt!.toLocaleDateString('fr-FR')}.`;
+
+    await this.notifRepo.create({
+      type: 'ABONNEMENT',
+      title: 'Abonnement activé',
+      message: expiryMsg,
+      userId: payment.userId,
+      tolinkId: String(subscription.id),
+    });
+
+    this.logger.log(`Auto-created subscription for user ${payment.userId}, payment ${payment.id}`);
   }
 
 }
@@ -235,32 +334,40 @@ export class HandleNotifyUseCase {
     private readonly notifRepo: PrismaNotificationRepository,
     private readonly subscriptionRepo: PrismaSubscriptionRepository,
     private readonly paymentGateway: PaymentGateway,
+    private readonly packRepo: PrismaPackRepository,
   ) {}
 
   async execute(body: any) {
-    const transactionId = body?.transaction_id || body?.transactionId || body?.reference;
-    if (!transactionId) {
+    const transactionId = body?.transaction_id || body?.transactionId;
+    const reference = body?.reference;
+    if (!transactionId && !reference) {
       this.logger.warn('GeniusPay notify: missing transaction_id/reference');
       return { status: 'error', message: 'missing transaction_id' };
     }
 
-    this.logger.log(`GeniusPay notify received for transaction: ${transactionId}`);
+    this.logger.log(`GeniusPay notify received: transactionId=${transactionId}, reference=${reference}`);
 
-    const payment = await this.paymentRepo.findByTransactionId(transactionId);
+    // Try lookup by transactionId first, then by GeniusPay reference
+    let payment: any = transactionId ? await this.paymentRepo.findByTransactionId(transactionId) : null;
+    if (!payment && reference) {
+      payment = await this.paymentRepo.findByGeniuspayReference(reference);
+    }
     if (!payment) {
-      this.logger.warn(`GeniusPay notify: payment not found for ${transactionId}`);
+      this.logger.warn(`GeniusPay notify: payment not found for transactionId=${transactionId}, reference=${reference}`);
       return { status: 'error', message: 'payment not found' };
     }
 
+    const actualTransactionId = payment.transactionId;
+
     if (payment.status === 'Success') {
-      this.logger.log(`Payment ${transactionId} already confirmed`);
+      this.logger.log(`Payment ${actualTransactionId} already confirmed`);
       return { status: 'ok', message: 'already confirmed' };
     }
 
     const metadata = payment.metadata as any;
-    const reference = metadata?.geniuspayReference || transactionId;
+    const verifyReference = metadata?.geniuspayReference || reference || actualTransactionId;
 
-    const verification = await this.geniusPayService.verifyPayment(reference);
+    const verification = await this.geniusPayService.verifyPayment(verifyReference);
     const mappedStatus = mapGeniusPayStatus(verification.status);
 
     const updateData: any = {
@@ -277,7 +384,7 @@ export class HandleNotifyUseCase {
 
     await this.paymentRepo.updatePayment(payment.id, updateData);
 
-    this.logger.log(`Payment ${transactionId} updated to status: ${mappedStatus}`);
+    this.logger.log(`Payment ${actualTransactionId} updated to status: ${mappedStatus}`);
 
     if (mappedStatus === 'Success') {
       await this.notifRepo.create({
@@ -287,6 +394,52 @@ export class HandleNotifyUseCase {
         userId: payment.userId,
         tolinkId: String(payment.id),
       });
+
+      // Auto-create subscription if missing
+      const existingSub = await this.subscriptionRepo.findUserSubscription(payment.userId);
+      if (!existingSub) {
+        const packId = metadata?.packId;
+        let expiresAt: Date | null = null;
+        let isLifetime = false;
+
+        if (packId) {
+          const pack = await this.packRepo.findById(packId);
+          if (pack && !pack.deletedAt) {
+            if (!pack.durationDays || pack.durationDays === 0) {
+              isLifetime = true;
+              expiresAt = null;
+            } else {
+              expiresAt = new Date();
+              expiresAt.setDate(expiresAt.getDate() + pack.durationDays);
+            }
+          }
+        } else {
+          expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + 30);
+        }
+
+        const subscription = await this.subscriptionRepo.createSubscription({
+          userId: payment.userId,
+          status: 'active',
+          expiresAt,
+          paymentId: payment.id,
+          packId,
+        });
+
+        const expiryMsg = isLifetime
+          ? 'Votre abonnement a été activé avec succès (à vie).'
+          : `Votre abonnement a été activé avec succès jusqu'au ${expiresAt!.toLocaleDateString('fr-FR')}.`;
+
+        await this.notifRepo.create({
+          type: 'ABONNEMENT',
+          title: 'Abonnement activé',
+          message: expiryMsg,
+          userId: payment.userId,
+          tolinkId: String(subscription.id),
+        });
+
+        this.logger.log(`Auto-created subscription for user ${payment.userId}, payment ${payment.id}`);
+      }
     }
 
     const subscription = await this.subscriptionRepo.findUserSubscription(payment.userId);
@@ -295,11 +448,11 @@ export class HandleNotifyUseCase {
         subscription.expiresAt === null || new Date(subscription.expiresAt) > new Date()
       );
 
-    await this.paymentGateway.notifyPaymentStatus(payment.userId, transactionId, {
+    await this.paymentGateway.notifyPaymentStatus(payment.userId, actualTransactionId, {
       status: mappedStatus,
       isPayment: mappedStatus === 'Success',
       hasActiveSubscription,
-      transactionId,
+      transactionId: actualTransactionId,
     });
 
     return { status: 'ok', message: 'payment updated', paymentStatus: mappedStatus };
