@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaRoomRepository } from '../../infrastructure/repositories/job-chat-notification.repository';
 
 @Injectable()
@@ -51,6 +51,18 @@ export class SendMessageUseCase {
   }) {
     const room = await this.roomRepo.findById(data.roomId);
     if (!room) throw new NotFoundException('Conversation introuvable');
+
+    if (data.isProposition) {
+      const now = new Date();
+      const hasActive = (room.messages || []).some((m: any) =>
+        m.isProposition &&
+        m.proposalStatus === 'Pending' &&
+        (!m.propositionExpired || new Date(m.propositionExpired) > now)
+      );
+      if (hasActive) {
+        throw new BadRequestException('Une proposition est déjà en attente dans cette conversation');
+      }
+    }
 
     const result = await this.roomRepo.sendMessage(data);
 

@@ -25,7 +25,7 @@ export class PrismaJobRepository {
         take: limit,
         orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
         include: {
-          user: { include: { medias: { where: { deletedAt: null }, include: { typeMedia: true } }, parents: true, nounus: true } },
+          user: { include: { medias: { where: { deletedAt: null }, include: { typeMedia: true } }, parents: true, nounus: true, abonnements: { where: { status: 'active' }, include: { pack: true }, take: 1, orderBy: { createdAt: 'desc' } } } },
           medias: true,
           preferences: {
             include: {
@@ -55,10 +55,21 @@ export class PrismaJobRepository {
     ]);
 
     const seen = new Set<number>();
-    const data = rawData.filter((job) => {
+    const data = rawData.filter((job: any) => {
       if (seen.has(job.id)) return false;
       seen.add(job.id);
+
+      const sub = (job as any)?.user?.abonnements?.[0];
+      const features: string[] = Array.isArray(sub?.pack?.features) ? sub.pack.features : [];
+      (job as any).isPriorityRequest = features.includes('priority_requests');
+
       return true;
+    });
+
+    data.sort((a: any, b: any) => {
+      if (a.isPriorityRequest && !b.isPriorityRequest) return -1;
+      if (!a.isPriorityRequest && b.isPriorityRequest) return 1;
+      return (b.priority || 0) - (a.priority || 0);
     });
 
     return { data, total };

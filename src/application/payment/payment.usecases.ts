@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
-import { PrismaPaymentRepository, PrismaSubscriptionRepository } from '../../infrastructure/repositories/payment-media-admin.repository';
+import { PrismaPaymentRepository, PrismaSubscriptionRepository, PrismaPackRepository } from '../../infrastructure/repositories/payment-media-admin.repository';
 import { PrismaNotificationRepository } from '../../infrastructure/repositories/job-chat-notification.repository';
 import { GeniusPayService } from '../../infrastructure/services/geniuspay.service';
 import { AppConfig } from '../../infrastructure/config/app.config';
 import { PaginationUtil } from '../../shared';
+import { PaymentGateway } from '../../presentation/gateways/payment.gateway';
 
 function mapGeniusPayStatus(geniusPayStatus: string): string {
   const statusMap: Record<string, string> = {
@@ -47,6 +48,7 @@ export class InitiatePaymentUseCase {
     private readonly paymentRepo: PrismaPaymentRepository,
     private readonly geniusPayService: GeniusPayService,
     private readonly appConfig: AppConfig,
+    private readonly packRepo: PrismaPackRepository,
   ) {}
 
   async execute(userId: string, data: {
@@ -62,12 +64,28 @@ export class InitiatePaymentUseCase {
     packId?: number;
     returnUrl?: string;
   }) {
-    if (!data.amount || data.amount <= 0) {
+    let amount = data.amount;
+    let currency = data.currency || 'XOF';
+    let description = data.description;
+
+    if (data.packId) {
+      const pack = await this.packRepo.findById(data.packId);
+      if (!pack || pack.deletedAt) {
+        throw new NotFoundException('Pack introuvable');
+      }
+      if (!pack.isActive) {
+        throw new BadRequestException('Ce pack n\'est plus disponible');
+      }
+      amount = pack.price;
+      currency = pack.currency || 'XOF';
+      description = description || `Abonnement ${pack.name} - ${pack.price} ${currency}`;
+    }
+
+    if (!amount || amount <= 0) {
       throw new BadRequestException('Le montant du paiement doit être supérieur à 0');
     }
 
     const transactionId = this.geniusPayService.generateTransactionId();
-    const currency = data.currency || 'XOF';
 
     const returnUrl = data.returnUrl
       ? `${data.returnUrl}?transaction_id=${transactionId}`
@@ -78,9 +96,9 @@ export class InitiatePaymentUseCase {
 
     const geniusPayResponse = await this.geniusPayService.initiatePayment({
       transactionId,
-      amount: data.amount,
+      amount,
       currency,
-      description: data.description || `Abonnement BabyNounu - ${data.amount} ${currency}`,
+      description: description || `Abonnement BabyNounu - ${amount} ${currency}`,
       customerName: data.customerName || 'Client',
       customerEmail: data.customerEmail || '',
       customerPhoneNumber: data.customerPhoneNumber || '',
@@ -94,7 +112,7 @@ export class InitiatePaymentUseCase {
 
     const payment = await this.paymentRepo.create({
       userId,
-      amount: data.amount,
+      amount,
       status: 'Pending',
       paymentMethod: data.paymentMethod,
       paymentType: data.paymentType,
@@ -118,7 +136,7 @@ export class InitiatePaymentUseCase {
       transactionId,
       paymentUrl: geniusPayResponse.paymentUrl,
       status: 'Pending',
-      amount: data.amount,
+      amount,
       currency,
     };
   }
@@ -131,6 +149,8 @@ export class VerifyPaymentUseCase {
   constructor(
     private readonly paymentRepo: PrismaPaymentRepository,
     private readonly geniusPayService: GeniusPayService,
+    private readonly subscriptionRepo: PrismaSubscriptionRepository,
+    private readonly paymentGateway: PaymentGateway,
   ) {}
 
   async execute(transactionId: string) {
@@ -162,6 +182,19 @@ export class VerifyPaymentUseCase {
 
       await this.paymentRepo.updatePayment(payment.id, updateData);
     }
+
+    const subscription = await this.subscriptionRepo.findUserSubscription(payment.userId);
+    const hasActiveSubscription =
+      !!subscription && subscription.status === 'active' && (
+        subscription.expiresAt === null || new Date(subscription.expiresAt) > new Date()
+      );
+
+    await this.paymentGateway.notifyPaymentStatus(payment.userId, transactionId, {
+      status: mappedStatus,
+      isPayment: mappedStatus === 'Success',
+      hasActiveSubscription,
+      transactionId,
+    });
 
     return {
       paymentId: payment.id,
@@ -200,6 +233,8 @@ export class HandleNotifyUseCase {
     private readonly paymentRepo: PrismaPaymentRepository,
     private readonly geniusPayService: GeniusPayService,
     private readonly notifRepo: PrismaNotificationRepository,
+    private readonly subscriptionRepo: PrismaSubscriptionRepository,
+    private readonly paymentGateway: PaymentGateway,
   ) {}
 
   async execute(body: any) {
@@ -254,6 +289,19 @@ export class HandleNotifyUseCase {
       });
     }
 
+    const subscription = await this.subscriptionRepo.findUserSubscription(payment.userId);
+    const hasActiveSubscription =
+      !!subscription && subscription.status === 'active' && (
+        subscription.expiresAt === null || new Date(subscription.expiresAt) > new Date()
+      );
+
+    await this.paymentGateway.notifyPaymentStatus(payment.userId, transactionId, {
+      status: mappedStatus,
+      isPayment: mappedStatus === 'Success',
+      hasActiveSubscription,
+      transactionId,
+    });
+
     return { status: 'ok', message: 'payment updated', paymentStatus: mappedStatus };
   }
 }
@@ -285,7 +333,13 @@ export class GetMySubscriptionUseCase {
   constructor(private readonly subscriptionRepo: PrismaSubscriptionRepository) {}
 
   async execute(userId: string) {
-    return this.subscriptionRepo.findUserSubscription(userId);
+    const subscription = await this.subscriptionRepo.findUserSubscription(userId);
+    if (!subscription) return null;
+
+    const packFeatures = (subscription as any).pack?.features;
+    const features: string[] = Array.isArray(packFeatures) ? packFeatures : [];
+
+    return { ...subscription, features };
   }
 }
 
@@ -295,6 +349,7 @@ export class SubscribeUseCase {
     private readonly subscriptionRepo: PrismaSubscriptionRepository,
     private readonly paymentRepo: PrismaPaymentRepository,
     private readonly notifRepo: PrismaNotificationRepository,
+    private readonly packRepo: PrismaPackRepository,
   ) {}
 
   async execute(userId: string, data: { paymentId: string; typeId?: number; packId?: number; durationDays?: number }) {
@@ -302,9 +357,26 @@ export class SubscribeUseCase {
     if (!payment || payment.userId !== userId) throw new BadRequestException('Paiement invalide');
     if (payment.status !== 'Success') throw new BadRequestException('Paiement non confirmé');
 
-    const expiresAt = new Date();
-    const durationDays = data.durationDays || 30;
-    expiresAt.setDate(expiresAt.getDate() + durationDays);
+    let expiresAt: Date | null = null;
+    let isLifetime = false;
+
+    if (data.packId) {
+      const pack = await this.packRepo.findById(data.packId);
+      if (!pack || pack.deletedAt) {
+        throw new NotFoundException('Pack introuvable');
+      }
+      if (!pack.durationDays || pack.durationDays === 0) {
+        isLifetime = true;
+        expiresAt = null;
+      } else {
+        expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + pack.durationDays);
+      }
+    } else {
+      expiresAt = new Date();
+      const durationDays = data.durationDays || 30;
+      expiresAt.setDate(expiresAt.getDate() + durationDays);
+    }
 
     const subscription = await this.subscriptionRepo.createSubscription({
       userId,
@@ -315,10 +387,14 @@ export class SubscribeUseCase {
       packId: data.packId,
     });
 
+    const expiryMsg = isLifetime
+      ? 'Votre abonnement a été activé avec succès (à vie).'
+      : `Votre abonnement a été activé avec succès jusqu'au ${expiresAt!.toLocaleDateString('fr-FR')}.`;
+
     await this.notifRepo.create({
       type: 'ABONNEMENT',
       title: 'Abonnement activé',
-      message: `Votre abonnement a été activé avec succès jusqu'au ${expiresAt.toLocaleDateString('fr-FR')}.`,
+      message: expiryMsg,
       userId,
       tolinkId: String(subscription.id),
     });

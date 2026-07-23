@@ -12,18 +12,20 @@ import {
   SubscribeUseCase,
 } from './payment.usecases';
 import { PrismaModule } from '../../infrastructure/prisma/prisma.module';
-import { PrismaPaymentRepository, PrismaSubscriptionRepository } from '../../infrastructure/repositories/payment-media-admin.repository';
+import { PrismaPaymentRepository, PrismaSubscriptionRepository, PrismaPackRepository } from '../../infrastructure/repositories/payment-media-admin.repository';
 import { GeniusPayService } from '../../infrastructure/services/geniuspay.service';
 import { ConfigModule } from '../../infrastructure/config/config.module';
 import { AppConfig } from '../../infrastructure/config/app.config';
 import { NotificationApplicationModule } from '../notification/notification.application.module';
 import { PrismaNotificationRepository } from '../../infrastructure/repositories/job-chat-notification.repository';
+import { GatewayModule } from '../../presentation/gateways/gateway.module';
 
 @Module({
-  imports: [PrismaModule, ConfigModule, NotificationApplicationModule],
+  imports: [PrismaModule, ConfigModule, NotificationApplicationModule, GatewayModule],
   providers: [
     PrismaPaymentRepository,
     PrismaSubscriptionRepository,
+    PrismaPackRepository,
     GeniusPayService,
     AppConfig,
     PrismaNotificationRepository,

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ChatGateway } from './chat.gateway';
+import { PaymentGateway } from './payment.gateway';
 import { PrismaModule } from '../../infrastructure/prisma/prisma.module';
 import { PrismaRoomRepository, PrismaNotificationRepository } from '../../infrastructure/repositories/job-chat-notification.repository';
 import { PrismaSubscriptionRepository } from '../../infrastructure/repositories/payment-media-admin.repository';
@@ -17,10 +18,11 @@ import { PushNotificationApplicationModule } from '../../application/push-notifi
   ],
   providers: [
     ChatGateway,
+    PaymentGateway,
     PrismaRoomRepository,
     PrismaNotificationRepository,
     PrismaSubscriptionRepository,
   ],
-  exports: [PushNotificationApplicationModule, ChatGateway],
+  exports: [PushNotificationApplicationModule, ChatGateway, PaymentGateway],
 })
 export class GatewayModule {}

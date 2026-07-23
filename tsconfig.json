@@ -11,6 +11,7 @@
     "target": "ESNext",
     "sourceMap": false,
     "outDir": "./dist",
+    "rootDir": ".",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": false,

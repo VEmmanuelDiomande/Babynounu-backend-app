@@ -628,6 +628,19 @@ export class SendMessageAsNounuUseCase {
     if (!room) throw new NotFoundException('Conversation introuvable');
     const nounuUser = room.sender?.nounus?.length ? room.sender : room.receiver;
     if (!nounuUser) throw new NotFoundException('Nounu introuvable dans cette conversation');
+
+    if (isProposition) {
+      const now = new Date();
+      const hasActive = (room.messages || []).some((m: any) =>
+        m.isProposition &&
+        m.proposalStatus === 'Pending' &&
+        (!m.propositionExpired || new Date(m.propositionExpired) > now)
+      );
+      if (hasActive) {
+        throw new BadRequestException('Une proposition est déjà en attente dans cette conversation');
+      }
+    }
+
     return this.adminRepo.sendMessageAsNounu(roomId, nounuUser.id, content, isProposition, propositionExpired, montant, periode, attachmentUrl, attachmentName, attachmentType);
   }
 }
@@ -784,15 +797,33 @@ export class CreateSubscriptionUseCase {
   constructor(
     private readonly adminRepo: PrismaAdminRepository,
     private readonly notifRepo: PrismaNotificationRepository,
+    private readonly packRepo: PrismaPackRepository,
   ) {}
 
   async execute(data: { userId: string; typeId?: number; packId?: number; durationDays?: number; status?: string }) {
     const user = await this.adminRepo.findUserById(data.userId);
     if (!user) throw new NotFoundException('Utilisateur introuvable');
 
-    const expiresAt = new Date();
-    const durationDays = data.durationDays || 30;
-    expiresAt.setDate(expiresAt.getDate() + durationDays);
+    let expiresAt: Date | null = null;
+    let isLifetime = false;
+
+    if (data.packId) {
+      const pack = await this.packRepo.findById(data.packId);
+      if (!pack || pack.deletedAt) {
+        throw new NotFoundException('Pack introuvable');
+      }
+      if (!pack.durationDays || pack.durationDays === 0) {
+        isLifetime = true;
+        expiresAt = null;
+      } else {
+        expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + pack.durationDays);
+      }
+    } else {
+      expiresAt = new Date();
+      const durationDays = data.durationDays || 30;
+      expiresAt.setDate(expiresAt.getDate() + durationDays);
+    }
 
     const subscription = await this.adminRepo.createSubscription({
       userId: data.userId,
@@ -802,10 +833,14 @@ export class CreateSubscriptionUseCase {
       packId: data.packId,
     });
 
+    const expiryMsg = isLifetime
+      ? 'Votre abonnement a été créé avec succès (à vie).'
+      : `Votre abonnement a été créé avec succès jusqu'au ${expiresAt!.toLocaleDateString('fr-FR')}.`;
+
     await this.notifRepo.create({
       type: 'ABONNEMENT',
       title: 'Abonnement créé',
-      message: `Votre abonnement a été créé avec succès jusqu'au ${expiresAt.toLocaleDateString('fr-FR')}.`,
+      message: expiryMsg,
       userId: data.userId,
       tolinkId: String(subscription.id),
     });

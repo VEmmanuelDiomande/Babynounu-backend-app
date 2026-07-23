@@ -566,7 +566,7 @@ export class PrismaAdminRepository {
         receiver: { include: { medias: true, nounus: true, parents: true, role: true } },
         nounu: true,
         parent: true,
-        messages: { orderBy: { createdAt: 'asc' }, include: { sender: { include: { medias: true } } } },
+        messages: { orderBy: { createdAt: 'asc' }, include: { sender: { include: { medias: true, nounus: true, parents: true } } } },
         unreadCounts: true,
       },
     });

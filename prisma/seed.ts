@@ -1211,50 +1211,72 @@ async function seedAppSettings() {
 // ============================================================
 
 async function seedPacks() {
-  const existing = await prisma.pack.findMany({ where: { deletedAt: null } });
-  if (existing.length > 0) {
-    console.log(`⏭️  Packs already seeded (${existing.length} found)`);
-    return;
-  }
+  const essentialFeatures = [
+    'view_profiles',
+    'unlimited_messaging',
+    'advanced_search',
+  ];
 
-  await prisma.pack.create({
-    data: {
+  const premiumFeatures = [
+    'view_profiles',
+    'unlimited_messaging',
+    'advanced_search',
+    'priority_requests',
+    'early_access_nounus',
+    'priority_support',
+  ];
+
+  await prisma.pack.upsert({
+    where: { slug: 'pack-essentiel' },
+    update: {
+      name: 'Pack Essentiel',
+      description: 'Accédez aux profils des nounous et à la messagerie',
+      price: 2000,
+      currency: 'FCFA',
+      durationDays: 0,
+      priority: 0,
+      isActive: true,
+      features: essentialFeatures,
+    },
+    create: {
       name: 'Pack Essentiel',
       slug: 'pack-essentiel',
       description: 'Accédez aux profils des nounous et à la messagerie',
       price: 2000,
       currency: 'FCFA',
-      durationDays: 30,
+      durationDays: 0,
       priority: 0,
       isActive: true,
-      features: [
-        'Accès aux profils des nounous',
-        'Messagerie illimitée',
-        'Recherche avancée',
-      ],
+      features: essentialFeatures,
     },
   });
 
-  await prisma.pack.create({
-    data: {
+  await prisma.pack.upsert({
+    where: { slug: 'pack-premium' },
+    update: {
+      name: 'Pack Premium',
+      description: 'Toutes les fonctionnalités avec options prioritaires',
+      price: 5000,
+      currency: 'FCFA',
+      durationDays: 0,
+      priority: 1,
+      isActive: true,
+      features: premiumFeatures,
+    },
+    create: {
       name: 'Pack Premium',
       slug: 'pack-premium',
       description: 'Toutes les fonctionnalités avec options prioritaires',
       price: 5000,
       currency: 'FCFA',
-      durationDays: 30,
+      durationDays: 0,
       priority: 1,
       isActive: true,
-      features: [
-        'Toutes les fonctionnalités du Pack Essentiel',
-        'Mise en avant des demandes',
-        'Accès prioritaire aux nouvelles nounous',
-        'Support prioritaire',
-      ],
+      features: premiumFeatures,
     },
   });
 
-  console.log('✅ Packs seeded (Essentiel 2000 FCFA, Premium 5000 FCFA)');
+  console.log('✅ Packs seeded/updated (Essentiel 2000 FCFA à vie, Premium 5000 FCFA à vie)');
 }
 
 // ============================================================

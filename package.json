@@ -27,7 +27,12 @@
     "schema:drop": "npm run typeorm -- schema:drop",
     "schema:sync": "npm run typeorm -- schema:sync",
     "seed": "tsx prisma/seed.ts",
-    "seed:reset": "prisma migrate reset --force && prisma db seed",
+    "seed:nounus": "tsx prisma/seed-nounus.ts",
+    "seed:nounus-batch": "tsx prisma/seed-nounus-batch.ts",
+    "seed:messages": "tsx prisma/seed-messages-contracts-notifs.ts",
+    "seed:contracts": "tsx prisma/seed-contracts.ts",
+    "seed:config": "tsx prisma/seed-config.ts",
+    "seed:reset": "prisma db push --force-reset && prisma db seed",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
